@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xmlns:context="http://www.springframework.org/schema/context"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd
+		http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context-4.3.xsd">
+
+    <context:property-placeholder location="classpath:application.properties" />
+	  
+ 	
+    <bean id="dataSource" class="oracle.jdbc.pool.OracleDataSource" destroy-method="close">
+		<property name="URL" value="${oracle.datasource.url}" />
+		<property name="user"     value="${oracle.datasource.username}" />
+		<property name="password" value="${oracle.datasource.password}" />
+		<property name="implicitCachingEnabled" value="true"/>
+		<property name="fastConnectionFailoverEnabled" value="true"/>
+	</bean>
+	
+
+	<bean id="jdbcTemplate" class="org.springframework.jdbc.core.JdbcTemplate">
+    		<constructor-arg ref="dataSource"/>
+	</bean>
+	
+    <bean id="objectFactory" class="com.eai.srcreate.ObjectFactory" scope="singleton"/>
+	
+	<bean id="srQueueTab" class="com.eai.srcreate.SrQueueTab" />
+	
+	<bean id="srQueueTabRowMapper" class="com.eai.srcreate.SrQueueTabRowMapper"/>
+
+</beans>

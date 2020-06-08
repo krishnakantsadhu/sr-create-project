@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xmlns:int-jdbc="http://www.springframework.org/schema/integration/jdbc"
+	xmlns:context="http://www.springframework.org/schema/context"
+	xmlns:int="http://www.springframework.org/schema/integration"
+	xsi:schemaLocation="http://www.springframework.org/schema/integration/jdbc http://www.springframework.org/schema/integration/jdbc/spring-integration-jdbc-5.1.xsd
+		http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd
+		http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context-4.3.xsd
+		http://www.springframework.org/schema/integration http://www.springframework.org/schema/integration/spring-integration-5.1.xsd">
+
+	<context:property-placeholder
+		location="classpath:application.properties" />
+		
+		
+	<int:gateway 
+		id="storeProcedureExecutor"
+		service-interface="com.eai.srcreate.outbound.StoreProcedureExecutor" 
+		default-request-channel="inboundChannel" 
+	  	default-reply-channel="outboundChannel"
+	></int:gateway>
+	
+	<int:channel id="inboundChannel"/>
+
+	<int-jdbc:stored-proc-outbound-gateway
+		id="srCreateSPCall"
+		data-source="dataSource" 
+		is-function="false"
+		stored-procedure-name="${sr.create.store.procedure}"
+		request-channel="inboundChannel" 
+		reply-channel="outboundChannel"
+		sql-parameter-source-factory="storeProcedureParameterMapping"
+		requires-reply="true"
+		>
+	</int-jdbc:stored-proc-outbound-gateway> 
+	
+	<int:channel id="outboundChannel"/>
+		
+	<bean id="dataSource" 
+		class="oracle.jdbc.pool.OracleDataSource"
+		destroy-method="close">
+		<property name="URL" value="${oracle.datasource.url}" />
+		<property name="user" value="${oracle.datasource.username}" />
+		<property name="password" value="${oracle.datasource.password}" />
+		<property name="implicitCachingEnabled" value="true" />
+		<property name="fastConnectionFailoverEnabled" value="true" />
+	</bean>
+	
+	<bean id="storeProcedureParameterMapping"
+		class="com.eai.srcreate.outbound.StoreProcedureParameterMapping"/>
+		
+	<bean id="objectFactory" class="com.eai.srcreate.outbound.ObjectFactory" scope="singleton"/>
+	
+</beans>

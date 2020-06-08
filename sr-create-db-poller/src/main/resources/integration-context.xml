@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xmlns:int="http://www.springframework.org/schema/integration"
+	xmlns:int-jdbc="http://www.springframework.org/schema/integration/jdbc"
+	xmlns:int-jms="http://www.springframework.org/schema/integration/jms"
+	xmlns:context="http://www.springframework.org/schema/context"
+	xsi:schemaLocation="http://www.springframework.org/schema/integration/jdbc http://www.springframework.org/schema/integration/jdbc/spring-integration-jdbc-5.1.xsd
+		http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd
+		http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context-4.3.xsd
+		http://www.springframework.org/schema/integration/jms http://www.springframework.org/schema/integration/jms/spring-integration-jms-5.1.xsd
+		http://www.springframework.org/schema/integration http://www.springframework.org/schema/integration/spring-integration-5.1.xsd">
+
+    <context:property-placeholder location="classpath:application.properties" />
+	  
+	<int-jdbc:inbound-channel-adapter
+		id="sr-create-jdbc-inbound-adpt"
+		channel="inboundChannel" 
+		data-source="dataSource"
+		query="${db.poller.sql.query}"	
+		update="${db.update.sql.query}"
+		auto-startup="true"
+		max-rows="3"
+		row-mapper="srQueueTabRowMapper"
+		>
+		<int:poller fixed-rate="4000">
+			<int:transactional/>
+		</int:poller>
+	</int-jdbc:inbound-channel-adapter>
+	
+	<int:channel id="inboundChannel"/>
+		
+ 		
+	<int:transformer id="requestTransformer" ref="requestTransformation" input-channel="inboundChannel"
+             method="transform" output-channel="messageTranformationOutboundChannel"/>
+             
+    <int:channel id="messageTranformationOutboundChannel"/>
+             	
+	<int:splitter input-channel="messageTranformationOutboundChannel" output-channel="splitterOutboundChannel" />
+	
+	<int:channel id="splitterOutboundChannel"/>
+	
+
+	<int:header-enricher input-channel="splitterOutboundChannel" output-channel="headerEnricherOutboundChannel"> 
+		<int:header name="replyto" value="callback_url"/>
+		<int:header name="callback_url" value="${incident.update.service.url}" />
+	</int:header-enricher>
+	 	
+	<int:channel id="headerEnricherOutboundChannel"/>
+
+	
+	<int-jms:outbound-channel-adapter 
+		connection-factory="mqCacheConnectionFactory"
+		channel="headerEnricherOutboundChannel"
+		destination="queue"
+		message-converter="marshallingMessageConverter"
+		header-mapper="defaultJmsHeaderMapper"
+	/>
+	
+	<!-- Mapping Database table Object to SRQueueTab Object -->
+	<bean id="srQueueTabRowMapper" class="com.eai.srcreate.dbpoller.SrQueueTabRowMapper"></bean>
+	
+	<bean id="requestTransformation" class="com.eai.srcreate.dbpoller.RequestTranformation" />
+	
+	<!--  convert java object to xml string message -->
+	<bean id="marshallingMessageConverter" class="org.springframework.jms.support.converter.MarshallingMessageConverter">
+    	<constructor-arg ref="marshallingTransformer"/>
+    	<constructor-arg ref="unmarshallingTransformer"/>
+    </bean>
+    <bean id="marshallingTransformer" class="org.springframework.oxm.jaxb.Jaxb2Marshaller">
+  		<property name="classesToBeBound" value="com.eai.srcreate.dbpoller.CreateRequest"/>
+	</bean>
+	<bean id="unmarshallingTransformer" class="org.springframework.oxm.jaxb.Jaxb2Marshaller">
+  		<property name="classesToBeBound" value="java.lang.String"/>
+	</bean>
+    
+   	<bean id="mqCacheConnectionFactory" destroy-method="destroy"  class="org.springframework.jms.connection.CachingConnectionFactory">
+		<property name="targetConnectionFactory" ref="mqConnectionFactory"/>
+		<property name="sessionCacheSize" value="${mq.session.cache}"/>
+	</bean>
+	
+	<!-- 
+	<bean id="secureMQConnectionAdapter" class="org.springframework.jms.connection.UserCredentialsConnectionFactoryAdapter">
+      	<property name="targetConnectionFactory" ref="mqConnectionFactory"/> 
+     	<property name="username" value="${mq.username}"/>
+     	<property name="password" value="${mq.passowrd}"/>
+    </bean> 
+    -->
+    
+    <bean id="mqConnectionFactory" destroy-method="clear" class="com.ibm.mq.jms.MQQueueConnectionFactory">
+		<property name="transportType" value="1"/>
+    	<property name="queueManager" value="${mq.queueManager}"/>
+    	<property name="hostName" value="${mq.hostName}"/>
+    	<property name="port" value="${mq.port}" />
+    	<property name="channel" value="${mq.channel}"/>
+    	<property name="CCSID" value="1208"/>
+    	<property name="useConnectionPooling" value="true"/>
+    </bean>
+	
+	<bean id="queue" class="com.ibm.mq.jms.MQQueue">
+		<constructor-arg index="0" value="${mq.queueManager}"/>
+    	<constructor-arg index="1" value="${mq.queueName}"/> 
+    	<!--  this remove MQRHF2 header -->
+        <!-- <property name="targetClient" value="#{T(com.ibm.msg.client.wmq.WMQConstants).WMQ_CLIENT_NONJMS_MQ}" />  --> 
+    </bean>
+    
+    <bean id="dataSource" class="oracle.jdbc.pool.OracleDataSource" destroy-method="close">
+		<property name="URL" value="${oracle.datasource.url}" />
+		<property name="user"     value="${oracle.datasource.username}" />
+		<property name="password" value="${oracle.datasource.password}" />
+		<property name="implicitCachingEnabled" value="true"/>
+		<property name="fastConnectionFailoverEnabled" value="true"/>
+	</bean>
+	
+	<bean id="defaultJmsHeaderMapper" class="org.springframework.integration.jms.DefaultJmsHeaderMapper"/>
+	
+	<bean id="objectFactory" class="com.eai.srcreate.dbpoller.ObjectFactory" scope="singleton"/>
+	
+	<bean id="srQueueTab" class="com.eai.srcreate.dbpoller.SrQueueTab"/>
+
+</beans>

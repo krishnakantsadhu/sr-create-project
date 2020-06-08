@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xmlns:int="http://www.springframework.org/schema/integration"
+	xmlns:int-jms="http://www.springframework.org/schema/integration/jms"
+	xmlns:context="http://www.springframework.org/schema/context"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd
+		http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context-4.3.xsd
+		http://www.springframework.org/schema/integration/jms http://www.springframework.org/schema/integration/jms/spring-integration-jms-5.1.xsd
+		http://www.springframework.org/schema/integration http://www.springframework.org/schema/integration/spring-integration-5.1.xsd">
+
+    <context:property-placeholder location="classpath:application.properties" />
+	
+ 	
+	<int-jms:message-driven-channel-adapter
+		connection-factory="mqCacheConnectionFactory"
+		destination="inboundQueue"
+		channel="inboundMessageChannel"
+		max-concurrent-consumers="5"
+		header-mapper="defaultJmsHeaderMapper"
+		message-converter="unmarshallingMessageConverter"
+	/>
+	
+	<int:channel id="inboundMessageChannel"/>
+	
+	<int:service-activator ref="serviceInvoker" method="invokeSrCreate" input-channel="inboundMessageChannel" output-channel="messageRouterChannel"/>
+	
+	<int:channel id="messageRouterChannel"/>
+	
+	<int:header-value-router  
+			id="headBaseRouting" 
+			header-name="replyto" 
+			input-channel="messageRouterChannel"
+			default-output-channel="mqMessageChannel"
+			>
+			<int:mapping value="callback_url" channel="httpMessageChannel"/>	
+	</int:header-value-router>
+	
+	<int:channel id="mqMessageChannel"/>
+	
+	<int-jms:outbound-channel-adapter 
+		connection-factory="mqCacheConnectionFactory"
+		channel="mqMessageChannel"
+		destination-expression="headers['jms_replyTo']"
+		message-converter="marshallingMessageConverter"
+		header-mapper="defaultJmsHeaderMapper"
+	/>
+	
+	<int:channel id="httpMessageChannel"/>
+		
+	<int:service-activator ref="serviceInvoker" method="invokeUpdateIncidentInDB" input-channel="httpMessageChannel"/>
+	
+	
+	<!--  convert xml to java object message -->
+	<bean id="unmarshallingMessageConverter" class="org.springframework.jms.support.converter.MarshallingMessageConverter">
+    	<constructor-arg ref="marshallingTransformer"/>
+    	<constructor-arg ref="unmarshallingTransformer"/>
+    </bean>
+    <!--  convert java object to xml string message -->
+	<bean id="marshallingMessageConverter" class="org.springframework.jms.support.converter.MarshallingMessageConverter">
+    	<constructor-arg ref="unmarshallingTransformer"/>
+    	<constructor-arg ref="marshallingTransformer"/>
+    </bean>
+    
+    <bean id="marshallingTransformer" class="org.springframework.oxm.jaxb.Jaxb2Marshaller">
+  		<property name="classesToBeBound" value="java.lang.String"/>
+	</bean>
+	<bean id="unmarshallingTransformer" class="org.springframework.oxm.jaxb.Jaxb2Marshaller">
+  		<property name="classesToBeBound" value="com.eai.service.mq.poller.CreateRequest"/>
+	</bean>
+	
+	
+   	<bean id="mqCacheConnectionFactory" destroy-method="destroy"  class="org.springframework.jms.connection.CachingConnectionFactory" >
+		<property name="targetConnectionFactory" ref="mqConnectionFactory"/>
+		<property name="sessionCacheSize" value="${mq.session.cache}"/>
+	</bean>
+	
+	<!-- not required since secure mq is not there -->
+	<!-- 
+	<bean id="secureMQConnectionAdapter" class="org.springframework.jms.connection.UserCredentialsConnectionFactoryAdapter" destroy-method="removeCredentialsFromCurrentThread">
+      	<property name="targetConnectionFactory" ref="mqConnectionFactory"/> 
+     	<property name="username" value="${mq.username}"/>
+     	<property name="password" value="${mq.passowrd}"/>
+    </bean> 
+    -->
+    
+    <bean id="mqConnectionFactory" destroy-method="clear" class="com.ibm.mq.jms.MQQueueConnectionFactory">
+		<property name="transportType" value="1"/>
+    	<property name="queueManager" value="${mq.queueManager}"/>
+    	<property name="hostName" value="${mq.hostName}"/>
+    	<property name="port" value="${mq.port}" />
+    	<property name="channel" value="${mq.channel}"/>
+    	<property name="CCSID" value="1208"/>
+    	<property name="useConnectionPooling" value="true"/>
+    </bean>
+	
+	<bean id="inboundQueue" class="com.ibm.mq.jms.MQQueue">
+		<constructor-arg index="0" value="${mq.queueManager}"/>
+    	<constructor-arg index="1" value="${mq.queueName}"/> 
+    	<!--  this remove MQRHF2 header -->
+        <!--  <property name="targetClient" value="#{T(com.ibm.msg.client.wmq.WMQConstants).WMQ_CLIENT_NONJMS_MQ}" />  --> 
+    </bean>
+    
+    
+    <bean id="outboundQueue" class="com.ibm.mq.jms.MQQueue">
+		<constructor-arg index="0" value="QMEIDPW1"/>
+    	<constructor-arg index="1" value="TEST.SR.CRT.RPO"/> 
+    	<!--  this remove MQRHF2 header -->
+        <property name="targetClient" value="#{T(com.ibm.msg.client.wmq.WMQConstants).WMQ_CLIENT_NONJMS_MQ}" />   
+    </bean>
+   
+	
+	<bean id="defaultJmsHeaderMapper" class="org.springframework.integration.jms.DefaultJmsHeaderMapper"/> 
+	
+	<bean id="serviceInvoker" class="com.eai.service.mq.poller.ServiceInvoker"/> 
+	
+</beans>
